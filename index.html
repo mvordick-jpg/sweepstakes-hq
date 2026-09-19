@@ -20,7 +20,7 @@ main{max-width:760px;margin:auto;padding:22px 16px 70px}.hero h1{font-size:30px;
 dialog{border:0;border-radius:22px;padding:0;width:min(94%,560px);box-shadow:0 20px 60px #0003}dialog::backdrop{background:#0006}.modal{padding:20px}
 label{display:block;font-size:13px;font-weight:700;margin:13px 0 5px}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px;font:inherit;background:white}textarea{min-height:78px;resize:vertical}
 .form-actions{display:flex;gap:8px;margin-top:18px}.form-actions button{flex:1}.stats{display:flex;gap:16px;color:var(--muted);font-size:13px;margin-top:8px}
-footer{color:var(--muted);font-size:12px;line-height:1.5;margin:24px 4px}
+footer{color:var(--muted);font-size:12px;line-height:1.5;margin:24px 4px}.backup-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.backup-tools .button{flex:1;min-width:145px}.status{font-size:12px;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body><main>
@@ -42,7 +42,8 @@ footer{color:var(--muted);font-size:12px;line-height:1.5;margin:24px 4px}
  <button class="button primary" id="addBtn">＋ Add Giveaway</button>
 </div>
 
-<section id="daily"></section><section id="recurring" class="hidden"></section><section id="one" class="hidden"></section><section id="ended" class="hidden"></section>
+<section id="daily"></section><section id="recurring" class="hidden"></section><section id="one" class="hidden"></section><section id="mail" class="hidden"></section><section id="ended" class="hidden"></section>
+<section class="panel"><strong>💾 Tracker Backup</strong><div class="small">Save a backup before future site updates. It includes giveaways, mailed/entered status, and tracked entry counts.</div><div class="backup-tools"><button class="button" id="exportBtn">Export Backup</button><button class="button" id="importBtn">Import Backup</button><input id="importFile" type="file" accept="application/json,.json" class="hidden"></div><div class="status" id="backupStatus"></div></section>
 
 <footer>Your data is saved locally in this browser/device. Sweepstakes HQ does not submit entries for you. Use the official rules for eligibility, limits, and deadlines.</footer>
 </main>
@@ -52,7 +53,7 @@ footer{color:var(--muted);font-size:12px;line-height:1.5;margin:24px 4px}
 <input type="hidden" id="editId">
 <label for="name">Giveaway name *</label><input id="name" required>
 <label for="prize">Prize</label><input id="prize" placeholder="$5,000, trip, beauty bundle…">
-<label for="type">Entry type</label><select id="type"><option value="daily">Daily / Repeat</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="one">One-Time</option></select>
+<label for="type">Entry type</label><select id="type"><option value="daily">Daily / Repeat</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="one">One-Time</option><option value="mail">Mail-In</option></select><div id="mailFrequencyWrap" class="hidden"><label for="mailFrequency">Mail-In schedule</label><select id="mailFrequency"><option value="one">One-Time</option><option value="monthly">Monthly / resets each month</option></select></div>
 <label for="deadline">Deadline</label><input id="deadline" type="date">
 <label for="url">Official entry page</label><input id="url" type="url" placeholder="https://…">
 <label for="note">Instructions / notes</label><textarea id="note" placeholder="AMOE first, select Patriots, winner notification details…"></textarea>
@@ -74,13 +75,13 @@ let items;
 try{items=JSON.parse(localStorage.getItem("swhq_items"))||defaults}catch(e){items=defaults}
 function save(){localStorage.setItem("swhq_items",JSON.stringify(items))}
 function today(){return new Date().toLocaleDateString("en-CA")}
-function weekKey(){const d=new Date();const jan1=new Date(d.getFullYear(),0,1);const n=Math.ceil((((d-jan1)/86400000)+jan1.getDay()+1)/7);return d.getFullYear()+"-W"+String(n).padStart(2,"0")}function monthKey(){const d=new Date();return d.getFullYear()+"-M"+String(d.getMonth()+1).padStart(2,"0")}function periodKey(type){if(type==="weekly")return weekKey();if(type==="monthly")return monthKey();return today()}function doneKey(id,type="daily"){return "swhq_done:"+periodKey(type)+":"+id}
+function weekKey(){const d=new Date();const jan1=new Date(d.getFullYear(),0,1);const n=Math.ceil((((d-jan1)/86400000)+jan1.getDay()+1)/7);return d.getFullYear()+"-W"+String(n).padStart(2,"0")}function monthKey(){const d=new Date();return d.getFullYear()+"-M"+String(d.getMonth()+1).padStart(2,"0")}function periodKey(type,mailFrequency="one"){if(type==="weekly")return weekKey();if(type==="monthly"||(type==="mail"&&mailFrequency==="monthly"))return monthKey();if(type==="mail")return "mailed";return today()}function doneKey(id,type="daily",mailFrequency="one"){return "swhq_done:"+periodKey(type,mailFrequency)+":"+id}
 function countKey(id){return "swhq_count:"+id}
 function daysLeft(s){if(!s)return null;const [y,m,d]=s.split("-").map(Number);const end=new Date(y,m-1,d,23,59,59);return Math.ceil((end-new Date())/86400000)}
 function safeUrl(u){return /^https?:\/\//i.test(u||"")?u:"#"}
 function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
 function render(){
- ["daily","recurring","one","ended"].forEach(x=>document.getElementById(x).innerHTML="");
+ ["daily","recurring","one","mail","ended"].forEach(x=>document.getElementById(x).innerHTML="");
  const sortedItems=[...items].sort((a,b)=>{
   const aOne=a.type==="one"&&(daysLeft(a.deadline)===null||daysLeft(a.deadline)>=0), bOne=b.type==="one"&&(daysLeft(b.deadline)===null||daysLeft(b.deadline)>=0);
   if(aOne&&bOne){
@@ -92,19 +93,19 @@ function render(){
   return 0;
  });
  sortedItems.forEach(x=>{
-  const dl=daysLeft(x.deadline), ended=dl!==null&&dl<0, section=ended?"ended":((x.type==="weekly"||x.type==="monthly")?"recurring":x.type);
-  const checked=localStorage.getItem(doneKey(x.id,x.type))==="1", count=+(localStorage.getItem(countKey(x.id))||0);
+  const dl=daysLeft(x.deadline), ended=dl!==null&&dl<0, section=ended?"ended":(x.type==="mail"?"mail":((x.type==="weekly"||x.type==="monthly")?"recurring":x.type));
+  const checked=localStorage.getItem(doneKey(x.id,x.type,x.mailFrequency))==="1", count=+(localStorage.getItem(countKey(x.id))||0);
   const deadline=x.deadline?`${esc(x.deadline)} • ${Math.max(0,dl)} day${Math.max(0,dl)==1?"":"s"} left`:"No deadline saved";
   const card=document.createElement("article");card.className="card";
-  card.innerHTML=`<div class="top"><div><div class="title">${esc(x.name)}</div><div class="meta"><b>${esc(x.prize||"Prize not entered")}</b><br>${deadline}</div></div><span class="badge">${x.type==="daily"?"Daily":x.type==="weekly"?"Weekly":x.type==="monthly"?"Monthly":section==="one"?"One-Time":"Ended"}</span></div>
+  card.innerHTML=`<div class="top"><div><div class="title">${esc(x.name)}</div><div class="meta"><b>${esc(x.prize||"Prize not entered")}</b><br>${deadline}</div></div><span class="badge">${x.type==="daily"?"Daily":x.type==="weekly"?"Weekly":x.type==="monthly"?"Monthly":x.type==="mail"?"Mail-In":section==="one"?"One-Time":"Ended"}</span></div>
   ${x.note?`<div class="note">${esc(x.note)}</div>`:""}
-  ${section==="daily"||section==="recurring"?`<div class="actions">${x.url?`<a class="button primary" target="_blank" rel="noopener" href="${safeUrl(x.url)}">Open Entry Page</a>`:""}<button class="button ${checked?"success":"accent"} toggle" data-id="${x.id}">${checked?(x.type==="weekly"?"✓ Entered This Week":x.type==="monthly"?"✓ Entered This Month":"✓ Entered Today"):"Mark Entered"}</button></div><div class="small">Tracked entries: ${count}</div>`:""}
+  ${section==="daily"||section==="recurring"||section==="mail"?`<div class="actions">${x.url?`<a class="button primary" target="_blank" rel="noopener" href="${safeUrl(x.url)}">Open Entry Page</a>`:""}<button class="button ${checked?"success":"accent"} toggle" data-id="${x.id}">${x.type==="mail"?(checked?"✓ Mailed":"📮 Mark Mailed"):(checked?(x.type==="weekly"?"✓ Entered This Week":x.type==="monthly"?"✓ Entered This Month":"✓ Entered Today"):"Mark Entered")}</button></div><div class="small">${x.type==="mail"?(x.mailFrequency==="monthly"?"Resets monthly • ":"")+"Tracked mailings: ":"Tracked entries: "}${count}</div>`:""}
   <div class="actions" style="margin-top:9px"><button class="button edit" data-id="${x.id}">Edit</button><button class="button danger delete" data-id="${x.id}">Delete</button></div>`;
   document.getElementById(section).appendChild(card);
  });
- ["daily","recurring","one","ended"].forEach(s=>{if(!document.getElementById(s).children.length)document.getElementById(s).innerHTML='<div class="empty">Nothing here yet.</div>'});
+ ["daily","recurring","one","mail","ended"].forEach(s=>{if(!document.getElementById(s).children.length)document.getElementById(s).innerHTML='<div class="empty">Nothing here yet.</div>'});
  document.querySelectorAll(".toggle").forEach(b=>b.addEventListener("click",()=>{
-  const item=items.find(i=>i.id===b.dataset.id); const k=doneKey(b.dataset.id,item?.type||"daily"), ck=localStorage.getItem(k)==="1", c=countKey(b.dataset.id), n=+(localStorage.getItem(c)||0);
+  const item=items.find(i=>i.id===b.dataset.id); const k=doneKey(b.dataset.id,item?.type||"daily",item?.mailFrequency||"one"), ck=localStorage.getItem(k)==="1", c=countKey(b.dataset.id), n=+(localStorage.getItem(c)||0);
   if(ck){localStorage.removeItem(k);localStorage.setItem(c,Math.max(0,n-1))}else{localStorage.setItem(k,"1");localStorage.setItem(c,n+1)} render();
  }));
  document.querySelectorAll(".edit").forEach(b=>b.addEventListener("click",()=>openEditor(b.dataset.id)));
@@ -129,11 +130,17 @@ document.getElementById("addBtn").addEventListener("click",()=>openEditor());
 document.getElementById("cancel").addEventListener("click",()=>dlg.close());
 form.addEventListener("submit",e=>{
  e.preventDefault();const old=document.getElementById("editId").value;
- const obj={id:old||"g"+Date.now(),name:document.getElementById("name").value.trim(),prize:document.getElementById("prize").value.trim(),type:document.getElementById("type").value,deadline:document.getElementById("deadline").value,url:document.getElementById("url").value.trim(),note:document.getElementById("note").value.trim()};
+ const selectedType=document.getElementById("type").value;const obj={id:old||"g"+Date.now(),name:document.getElementById("name").value.trim(),prize:document.getElementById("prize").value.trim(),type:selectedType,deadline:document.getElementById("deadline").value,url:document.getElementById("url").value.trim(),note:document.getElementById("note").value.trim(),mailFrequency:selectedType==="mail"?document.getElementById("mailFrequency").value:""};
  if(!obj.name)return;
  if(old)items=items.map(x=>x.id===old?obj:x);else items.push(obj);
  save();dlg.close();form.reset();render();
 });
-document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");["daily","recurring","one","ended"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==t.dataset.tab))}));
+function updateMailFrequencyVisibility(){document.getElementById("mailFrequencyWrap").classList.toggle("hidden",document.getElementById("type").value!=="mail")}
+document.getElementById("type").addEventListener("change",updateMailFrequencyVisibility);
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");["daily","recurring","one","mail","ended"].forEach(x=>document.getElementById(x).classList.toggle("hidden",x!==t.dataset.tab))}));
+function trackerBackup(){const storage={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith("swhq_"))storage[k]=localStorage.getItem(k)}return {app:"Sweepstakes HQ",version:2,exportedAt:new Date().toISOString(),storage}}
+document.getElementById("exportBtn").addEventListener("click",()=>{const blob=new Blob([JSON.stringify(trackerBackup(),null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sweepstakes-hq-backup-"+today()+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);document.getElementById("backupStatus").textContent="Backup exported ✓"});
+document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
+document.getElementById("importFile").addEventListener("change",async e=>{const file=e.target.files?.[0];if(!file)return;try{const data=JSON.parse(await file.text());if(!data||data.app!=="Sweepstakes HQ"||!data.storage)throw new Error("Invalid backup");if(!confirm("Import this backup? It will replace your current Sweepstakes HQ tracker data.")){e.target.value="";return}Object.keys(localStorage).filter(k=>k.startsWith("swhq_")).forEach(k=>localStorage.removeItem(k));Object.entries(data.storage).forEach(([k,v])=>{if(k.startsWith("swhq_"))localStorage.setItem(k,v)});items=JSON.parse(localStorage.getItem("swhq_items"))||defaults;document.getElementById("backupStatus").textContent="Backup imported ✓";render()}catch(err){alert("That file does not look like a valid Sweepstakes HQ backup.")}e.target.value=""});
 render();
 </script></body></html>
